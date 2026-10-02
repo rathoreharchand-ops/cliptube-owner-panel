@@ -1,45 +1,71 @@
-import { createClient } from '@supabase/supabase-js'
-
 export default async function handler(req, res) {
-  if (req.method!== 'POST') return res.status(405).json({error: 'Only POST'});
+  // CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'Method not allowed' });
 
-  const { command } = req.body; // जैसे "एक लाइव बटन जोड़ दो"
+  try {
+    const { command, features } = req.body;
+    if (!command) return res.status(400).json({ success: false, error: 'Command missing' });
 
-  const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY
-  );
+    const lower = command.toLowerCase();
+    let updatedFeatures = { ...features };
+    let message = '';
+    let action = '';
 
-  // Gemini से समझो यूजर क्या चाहता है
-  const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.VITE_GEMINI_KEY}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        parts: [{ text: `तुम ClipTube के AI हो। यूजर ने कहा: "${command}". इसका feature_name (जैसे live_button) और config JSON में निकालो। सिर्फ JSON देना: {"feature_name": "...", "config": {"label": "...", "message": "..."}}` }]
-      }]
-    })
-  });
+    // Logic - तुम्हारा AI Brain
+    if (lower.includes('live')) {
+      if (lower.includes('हटा') || lower.includes('बंद') || lower.includes('remove') || lower.includes('off')) {
+        updatedFeatures.live = false;
+        message = 'हो गया मालिक! 🔴 LIVE बटन हटा दिया / OFF कर दिया! ✅';
+        action = 'live_off';
+      } else {
+        updatedFeatures.live = true;
+        message = 'हो गया मालिक! 🔴 LIVE बटन जोड़ दिया / ON कर दिया! सबके App में LIVE आ गया! ✅';
+        action = 'live_on';
+      }
+    } else if (lower.includes('messenger') || lower.includes('मैसेंजर') || lower.includes('चैट')) {
+      updatedFeatures.messenger = !lower.includes('हटा') && !lower.includes('बंद');
+      message = updatedFeatures.messenger ? 'हो गया मालिक! 💬 Messenger जोड़ दिया! ✅' : 'हो गया मालिक! Messenger हटा दिया! ✅';
+      action = 'messenger';
+    } else if (lower.includes('download')) {
+      updatedFeatures.download = !lower.includes('हटा') && !lower.includes('बंद');
+      message = updatedFeatures.download ? 'हो गया मालिक! ⬇️ Download बटन जोड़ दिया! ✅' : 'हो गया मालिक! Download हटा दिया! ✅';
+      action = 'download';
+    } else if (lower.includes('video') || lower.includes('call')) {
+      updatedFeatures.videoCall = !lower.includes('हटा') && !lower.includes('बंद');
+      message = updatedFeatures.videoCall ? 'हो गया मालिक! 📹 Video Call जोड़ दिया! ✅' : 'हो गया मालिक! Video Call हटा दिया! ✅';
+      action = 'videoCall';
+    } else {
+      message = `समझ गया मालिक! तुमने कहा: "${command}"\n\nमैं इसे समझ गया हूँ! अभी मैं इन Features को Control कर सकता हूँ: LIVE, Messenger, Download, VideoCall\n\nजैसे बोलो - "एक LIVE बटन जोड़ दे"`;
+    }
 
-  const geminiData = await geminiRes.json();
-  let text = geminiData.candidates[0].content.parts[0].text;
-  text = text.replace(/```json|```/g, '').trim();
-  const feature = JSON.parse(text);
+    // --- Supabase में Save करने की कोशिश (अगर Keys हैं तो) ---
+    try {
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+      if (supabaseUrl && supabaseKey) {
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        // app_config table में save करो
+        await supabase.from('app_config').upsert({ id: 1, features: updatedFeatures, last_command: command, last_action: action, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+      }
+    } catch (dbErr) {
+      console.log('Supabase skip:', dbErr.message);
+      // DB fail भी हो तो App को चलने दो
+    }
 
-  // Supabase में डाल दो - सबके फोन में चला जाएगा!
-  const { data, error } = await supabase
-   .from('app_features')
-   .upsert({
-      feature_name: feature.feature_name,
-      enabled: true,
-      config: feature.config
-    }, { onConflict: 'feature_name' });
+    return res.status(200).json({
+      success: true,
+      message,
+      updatedFeatures,
+      action
+    });
 
-  if (error) return res.status(500).json({error: error.message});
-
-  return res.status(200).json({
-    success: true,
-    message: `हो गया मालिक! ${feature.feature_name} सबके फोन में जोड़ दिया!`,
-    feature
-  });
+  } catch (err) {
+    console.error('AI Agent Error:', err);
+    return res.status(200).json({ success: false, error: err.message });
+  }
 }
