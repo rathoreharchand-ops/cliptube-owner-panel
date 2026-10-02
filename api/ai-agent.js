@@ -16,7 +16,18 @@ export default async function handler(req, res) {
     let action = '';
 
     // Logic - तुम्हारा AI Brain
-    if (lower.includes('live')) {
+        // LIVE Check - Hindi + English दोनों!
+    if (lower.includes('live') || lower.includes('लाइव') || lower.includes('लाइव बटन')) {
+      if (lower.includes('हटा') || lower.includes('बंद') || lower.includes('remove') || lower.includes('off') || lower.includes('हट')) {
+        updatedFeatures.live = false;
+        message = 'हो गया मालिक! 🔴 LIVE बटन हटा दिया / OFF कर दिया! ✅';
+        action = 'live_off';
+      } else {
+        updatedFeatures.live = true;
+        message = 'हो गया मालिक! 🔴 LIVE बटन जोड़ दिया / ON कर दिया! सबके App में LIVE आ गया! ✅\n\nअब तुम्हारा Main ClipTube App खोलो - वहाँ LIVE बटन दिखेगा!';
+        action = 'live_on';
+      }
+    } else if (lower.includes('messenger') || lower.includes('मैसेंजर') || lower.includes('चैट') || lower.includes('मैसेंजर')) {
       if (lower.includes('हटा') || lower.includes('बंद') || lower.includes('remove') || lower.includes('off')) {
         updatedFeatures.live = false;
         message = 'हो गया मालिक! 🔴 LIVE बटन हटा दिया / OFF कर दिया! ✅';
